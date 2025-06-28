@@ -104,8 +104,8 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     env_preview = RobotEnv(action_space="joint_position", gripper_action_space="position")
     preview_obs = extract_observation(env_preview.get_observation(), setting)
 
-    left_img = preview_obs["left_image"] or np.zeros((288, 512, 3), dtype=np.uint8)
-    right_img = preview_obs["right_image"] or np.zeros((288, 512, 3), dtype=np.uint8)
+    left_img = preview_obs["left_image"] if preview_obs["left_image" is not None else np.zeros((288, 512, 3), dtype=np.uint8)
+    right_img = preview_obs["right_image"] if preview_obs["right_image"] is not None else np.zeros((288, 512, 3), dtype=np.uint8)
     preview_concat = np.concatenate([left_img, right_img], axis=1)
 
     plt.imshow(preview_concat)
