@@ -1,0 +1,11 @@
+evaluator_email: pranavatreya@berkeley.edu # make sure this is the email address you used to sign up!
+institution: Berkeley
+logging_server_ip: 34.55.101.123:5000 # do not change this
+third_person_camera: right_image # default camera for third-person view, can be 'left_image' or 'right_image'
+cameras:
+  - name: left
+    id: 24259877 # adjust based on your setup
+  - name: right
+    id: 24514023 # adjust based on your setup
+  - name: wrist
+    id: 13062452 # adjust based on your setup
