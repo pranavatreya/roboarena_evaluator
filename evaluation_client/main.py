@@ -192,6 +192,13 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         # 2. New RobotEnv instance as requested
         env = RobotEnv(action_space=action_space, gripper_action_space="position")
 
+        # 2.5. We need to wait for the environment to be ready
+        for _ in range(200):              # wait up to 20 seconds
+            raw = env.get_observation()
+            if "image" in raw:
+                break
+            time.sleep(0.1)
+
         # 3. Let the server (policy) reset internal state if desired
         policy_client.reset()
 
