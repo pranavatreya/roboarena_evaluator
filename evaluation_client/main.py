@@ -178,8 +178,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     for i, pol in enumerate(policies):
         label, ip, port = pol["label"], pol["ip"], pol["port"]
 
-        print(f"\n=== Evaluating policy {label} ===")
-        print("ℹ️  Type 't' + ENTER at any time to terminate the episode early.\n")
+        print(f"Setting up the robot environment for policy {label}...")
 
         # 1. Connect to the policy server and grab its declared config
         policy_client = WebsocketClientPolicy(ip, port)
@@ -195,6 +194,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 
         # 2. New RobotEnv instance as requested
         env = RobotEnv(action_space=action_space, gripper_action_space="position")
+
+        print(f"\n=== Evaluating policy {label} ===")
+        print("ℹ️  Type 't' + ENTER at any time to terminate the episode early.\n")
 
         # 3. Let the server (policy) reset internal state if desired
         policy_client.reset()
@@ -370,7 +372,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         print()
         ts_str = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
-        def _encode_video(frames: list[np.ndarray], tag: str):
+        def _encode_video(frames, tag):
             if not frames:
                 return None
             tmp = f"/tmp/temp_{tag}.mp4"
@@ -446,7 +448,11 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
             input("Press ENTER once the scene has been reset.")
             plt.close(fig)
 
+        # Close and garbage collect the env
         env.close()
+        del env
+        gc.collect()
+        time.sleep(0.2)
 
     # -------------------------------------------------------------------------#
     #  Session termination                                                     #
