@@ -6,6 +6,7 @@ import sys
 import time
 import select
 from typing import Tuple, Dict, Any, Optional
+import gc
 
 import numpy as np
 import requests
@@ -163,6 +164,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     # Save a reference state for “reset scene” prompt later
     ref_reset_state = preview_concat.copy()
     env_preview.close()
+    del env_preview
+    gc.collect()
+    time.sleep(0.2)
 
     preference_ab: Optional[str] = None
     comparative_feedback: Optional[str] = None
@@ -191,13 +195,6 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 
         # 2. New RobotEnv instance as requested
         env = RobotEnv(action_space=action_space, gripper_action_space="position")
-
-        # 2.5. We need to wait for the environment to be ready
-        for _ in range(200):              # wait up to 20 seconds
-            raw = env.get_observation()
-            if "image" in raw:
-                break
-            time.sleep(0.1)
 
         # 3. Let the server (policy) reset internal state if desired
         policy_client.reset()
