@@ -1,12 +1,16 @@
 # RoboArena
 
-Welcome to RoboArena, our distributed robot evaluation benchmark! This README explains how to run the **evaluation client** script, how to configure it for your institution’s setup, and tips on providing **high-quality, detailed feedback** that will help us improve our robot learning benchmark.
+Thanks for being a part of the evaluation team of RoboArena! This README explains how to run the evaluation client script, how to configure it for your institution’s setup, and some tips on picking tasks for evaluation and providing high-quality feedback used for evaluating policies.
 
 ---
 
+## Evaluator Guide
+
+We wrote an evaluate guide here https://docs.google.com/document/d/1g-Z1lGUozbynA3U2khogBdLBZnrRTg9o2oqZUZkOwI4/edit?usp=sharing. Please make sure you're faimilar with its contents before running evals!
+
 ## Installation
 
-1. **Clone or copy** this repository.
+1. Clone this repo.
 2. Ensure you have **Python 3.7+** installed.
 3. Install dependencies.
 
@@ -21,15 +25,15 @@ Welcome to RoboArena, our distributed robot evaluation benchmark! This README ex
 ## Running the Evaluation
 
 1. Create or edit a YAML config file (similar to `configs/berkeley.yaml`) that contains:
-   - `evaluator_name`: Your full name, or some ID you would like to use for evaluators at your university
-   - `institution`: Your university
-   - `logging_server_ip`: Set this to `34.55.101.123:5000`.
-   - `third_person_camera`: The default vantage (e.g. `right_image` or `left_image`).
+   - `evaluator_email`: Your email. Email will be the primary form of identification for all evaluators and submitters. Make sure the same email is used for evaluations and for policy submissions, so you can get extra eval credit for evaluating policies. 
+   - `institution`: Your university/institution
+   - `logging_server_ip`: Should be `34.55.101.123:5000`.
+   - `third_person_camera`: The default vantage point (e.g. `right_image` or `left_image`).
    - A `cameras` section that identifies the camera `name` and `id` for your institution’s camera setup.
 
    A minimal example, `my_institution.yaml`, might look like:
    ```yaml
-   evaluator_name: John Doe
+   evaluator_email: oski_bear@gmail.com
    institution: Berkeley
    logging_server_ip: 34.55.101.123:5000
    third_person_camera: right_image
@@ -41,7 +45,7 @@ Welcome to RoboArena, our distributed robot evaluation benchmark! This README ex
      - name: wrist
        id: 13062452
    ```
-   Adjust the IDs to match **your** cameras. Change `third_person_camera` to `left_image` if you prefer the left camera as your default third-person vantage.
+   Make sure to adjust the camera IDs to match your setup. See https://droid-dataset.github.io/droid/ for more details.
 
 3. **Run** the evaluation client script:
 
@@ -50,20 +54,17 @@ Welcome to RoboArena, our distributed robot evaluation benchmark! This README ex
    ```
 
 4. **Follow the prompts** in the terminal:
-   - Confirm defaults of **evaluator name** and **institution**.
+   - Confirm defaults of evaluator email and institution.
    - Confirm that the left/right cameras are correctly pointing at the part of the scene you want for the third-person view.
-   - (Optional) **Switch** between the left or right vantage if you prefer to do so; the script will ask you.
-   - **Enter** the **language command** you want the policy to follow (e.g., “pick up the red block and place it in the box”).
-   - The system will then run the A/B evaluation (plus additional policies C, D, ...):
-     1. **Policy A** rollout
-     2. **Policy B** rollout (then it will ask which policy you preferred, A, B, or tie)
-     3. **Policy C** rollout
-     4. **Policy D** rollout
-     5. **...**
-   - The script will guide you to provide **partial success** scores.
+   - (Optional) Switch between the left or right vantage if you prefer to do so; the script will ask you.
+   - Enter the language command you want the policy to follow (e.g., “pick up the red block and place it in the box”).
+   - The system will then run the A/B evaluation
+     1. **Policy A** rollout (it will then ask for partial success)
+     2. **Policy B** rollout (it will ask for partial success, then it will ask which policy you preferred, A, B, or tie)
+   - **Important**: there are 3 types of feedback the script asks you to provide: partial success, A/B preference, and long-form feedback. For partial success please give your best approximate guess -- it's up to you how you assign partial credit points. The most important form of feedback is the next one, A/B preference. This is used to construct the global policy rankings. For long-form feedback, see additional instructions below.
    - **At the end**, the script asks whether everything went well and if the session should be considered valid. Data from invalid sessions will not be used for our experiments, and we leave this option to handle cases where something went wrong mid-evaluation.
 
-5. **Repeat** as many times as you want. **Between each run** of the entire script:
+6. **Repeat** as many times as you want. **Between each run** of the entire script:
    - Feel free to **move the robot** to a new location or **change tasks** for the next A/B evaluation. This fosters diverse evaluations. 
    - You can also reposition or switch cameras to create new viewpoints.
 
