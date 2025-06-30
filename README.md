@@ -6,7 +6,9 @@ Thanks for being a part of the evaluation team of RoboArena! This README explain
 
 ## Evaluator Guide
 
-We wrote an evaluate guide here https://docs.google.com/document/d/1g-Z1lGUozbynA3U2khogBdLBZnrRTg9o2oqZUZkOwI4/edit?usp=sharing. Please make sure you're faimilar with its contents before running evals!
+We wrote an evaluate guide here: https://docs.google.com/document/d/1g-Z1lGUozbynA3U2khogBdLBZnrRTg9o2oqZUZkOwI4/edit?usp=sharing. 
+
+Please make sure you're faimilar with its contents before running evals!
 
 ## Installation
 
