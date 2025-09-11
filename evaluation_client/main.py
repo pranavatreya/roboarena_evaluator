@@ -76,7 +76,7 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
 def check_server_version(server_ip: str) -> None:
     """Abort if the central server and client are out-of-sync."""
     url = f"http://{server_ip}/version_check"
-    payload = {"client_version": "1.1"}
+    payload = {"client_version": "1.2"}
     try:
         r = requests.post(url, json=payload)
         if not r.ok:
@@ -178,6 +178,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     for i, pol in enumerate(policies):
         label, ip, port = pol["label"], pol["ip"], pol["port"]
 
+        # Create a second, policy specific session ID, for passing to policy client
+        session_id_x_policy = session_id + "-" + label
+
         print(f"Setting up the robot environment for policy {label}...")
 
         # 1. Connect to the policy server and grab its declared config
@@ -198,10 +201,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         print(f"\n=== Evaluating policy {label} ===")
         print("ℹ️  Type 't' + ENTER at any time to terminate the episode early.\n")
 
-        # 3. Let the server (policy) reset internal state if desired
-        policy_client.reset()
-
-        # 4. Buffers for logging & video
+        # 3. Buffers for logging & video
         inference_latencies: list[float] = []
         frames_left, frames_right, frames_wrist = [], [], []
         episode_data = []
@@ -270,7 +270,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 
                 # Session id (optional)
                 if include_sid:
-                    request_data["session_id"] = session_id
+                    request_data["session_id"] = session_id_x_policy
 
                 # Inference
                 infer_t0 = time.time()
@@ -439,6 +439,10 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         ):
             print("Retrying reset …")
             env.reset()
+
+        # Call reset() on policy client
+        reset_info = {"session_id": session_id_x_policy}
+        policy_client.reset(reset_info)
 
         if i < len(policies) - 1:
             fig, ax = plt.subplots()

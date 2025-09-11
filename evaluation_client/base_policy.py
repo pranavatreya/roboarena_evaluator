@@ -22,6 +22,6 @@ class BasePolicy(abc.ABC):
                                 --> all N actions will get executed on the robot before the server is queried again
         """
 
-    def reset(self) -> None:
+    def reset(self, reset_info: Dict) -> None:
         """Reset the policy to its initial state."""
         pass
