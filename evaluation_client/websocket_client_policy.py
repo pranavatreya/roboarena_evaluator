@@ -25,14 +25,17 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
 
     def _wait_for_server(self):
         logging.info(f"Waiting for server at {self._uri}...")
-        while True:
-            try:
-                conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
-                metadata = msgpack_numpy.unpackb(conn.recv())
-                return conn, metadata
-            except ConnectionRefusedError:
-                logging.info("Still waiting for server...")
-                time.sleep(5)
+        try:
+            conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
+            metadata = msgpack_numpy.unpackb(conn.recv())
+            return conn, metadata
+        except:
+            logging.info("Connection to server with ws:// failed. Trying wss:// ...")
+            
+        self._uri = "wss://" + self._uri.split("//")[1]
+        conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
+        metadata = msgpack_numpy.unpackb(conn.recv())
+        return conn, metadata
 
     @override
     def infer(self, obs: Dict) -> Dict:  # noqa: UP006

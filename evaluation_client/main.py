@@ -44,11 +44,18 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
     def _is_cam(key: str, cam_name: str) -> bool:
         cam_id = str(setting.cameras.get(cam_name, ""))
         return cam_id and cam_id in key and "left" in key
+    
+    def _is_cam_stereo(key: str, cam_name: str) -> bool:
+        cam_id = str(setting.cameras.get(cam_name, ""))
+        return cam_id and cam_id in key and "right" in key
 
     img_obs = obs_dict["image"]
     left_img = next((img_obs[k] for k in img_obs if _is_cam(k, "left")), None)
     right_img = next((img_obs[k] for k in img_obs if _is_cam(k, "right")), None)
     wrist_img = next((img_obs[k] for k in img_obs if _is_cam(k, "wrist")), None)
+    left_img_stereo = next((img_obs[k] for k in img_obs if _is_cam_stereo(k, "left")), None)
+    right_img_stereo = next((img_obs[k] for k in img_obs if _is_cam_stereo(k, "right")), None)
+    wrist_img_stereo = next((img_obs[k] for k in img_obs if _is_cam_stereo(k, "wrist")), None)
 
     def _process(img: Optional[np.ndarray]) -> Optional[np.ndarray]:
         if img is None:
@@ -61,12 +68,18 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
     left_img = _process(left_img)
     right_img = _process(right_img)
     wrist_img = _process(wrist_img)
+    left_img_stereo = _process(left_img_stereo)
+    right_img_stereo = _process(right_img_stereo)
+    wrist_img_stereo = _process(wrist_img_stereo)
 
     rs = obs_dict["robot_state"]
     return {
         "left_image": left_img,
         "right_image": right_img,
         "wrist_image": wrist_img,
+        "left_image_stereo": left_img_stereo,
+        "right_image_stereo": right_img_stereo,
+        "wrist_image_stereo": wrist_img_stereo,
         "cartesian_position": np.array(rs["cartesian_position"]),
         "joint_position": np.array(rs["joint_positions"]),
         "gripper_position": np.array([rs["gripper_position"]]),
@@ -192,8 +205,17 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
             if server_cfg.get("image_resolution") else None
         needs_wrist = bool(server_cfg.get("needs_wrist_camera", True))
         n_external = int(server_cfg.get("n_external_cameras", 1))
+        needs_stereo = bool(server_cfg.get("needs_stereo_camera", False))
         include_sid = bool(server_cfg.get("needs_session_id", False))
         action_space = server_cfg.get("action_space", "joint_position")
+
+        # If policy server requested two wrist images, but local robot setup only supports one, 
+        # notify evaluator and terminate.
+        left_exists_on_robot = str(setting.cameras.get("left", "")) != ""
+        right_exists_on_robot = str(setting.cameras.get("right", "")) != ""
+        both_exist = left_exists_on_robot and right_exists_on_robot
+        if n_external == 2:
+            assert both_exist, f"Policy {label} requested images from two third-person cameras, but your robot setup only has one. The script will now terminate because this policy cannot be evaluated. Please run this script again, and it's possible that the next time, the policies you will be given to evaluate only request one external camera. We understand this isn't the most optimal solution, and we'll work in the future to make this more seamless for you. Please contact us if this proves a significant inconvenience."
 
         # 2. New RobotEnv instance as requested
         env = RobotEnv(action_space=action_space, gripper_action_space="position")
@@ -243,8 +265,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
                     )
 
                 request_data: Dict[str, Any] = {
-                    # Joint / gripper are always sent
+                    # Joint / cartesian / gripper are always sent
                     "observation/joint_position": obs["joint_position"],
+                    "observation/cartesian_position": obs["cartesian_position"],
                     "observation/gripper_position": obs["gripper_position"],
                     "prompt": lang_command,
                 }
@@ -254,6 +277,10 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
                     request_data["observation/exterior_image_1_left"] = _prepare(
                         obs[base_image]
                     )
+                    if needs_stereo:
+                        request_data["observation/exterior_image_1_right"] = _prepare(
+                            obs[base_image + "_stereo"]
+                        )
                 elif n_external == 2:
                     request_data["observation/exterior_image_1_left"] = _prepare(
                         obs["left_image"]
@@ -261,12 +288,23 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
                     request_data["observation/exterior_image_2_left"] = _prepare(
                         obs["right_image"]
                     )
+                    if needs_stereo:
+                        request_data["observation/exterior_image_1_right"] = _prepare(
+                            obs["left_image_stereo"]
+                        )
+                        request_data["observation/exterior_image_2_right"] = _prepare(
+                            obs["right_image_stereo"]
+                        )  
 
                 # Wrist camera (optional)
                 if needs_wrist and obs["wrist_image"] is not None:
                     request_data["observation/wrist_image_left"] = _prepare(
                         obs["wrist_image"]
                     )
+                    if needs_stereo:
+                        request_data["observation/wrist_image_right"] = _prepare(
+                            obs["wrist_image_stereo"]
+                        ) 
 
                 # Session id (optional)
                 if include_sid:
