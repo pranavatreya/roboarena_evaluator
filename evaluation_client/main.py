@@ -150,22 +150,31 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     # ----------------------------------------------------------------------- #
     #  Request policy list                                                    #
     # ----------------------------------------------------------------------- #
-    resp = requests.get(
-        f"http://{setting.logging_server_ip}/get_policies_to_compare",
-        params={
-            "eval_location": institution,
-            "evaluator_name": evaluator_email, # email is the primary form of id now
-            "robot_name": "DROID",
-        },
-    )
-    if not resp.ok:
-        print("Failed to obtain policies from central server:")
-        print(resp.status_code, resp.text)
-        sys.exit(1)
+    # resp = requests.get(
+    #     f"http://{setting.logging_server_ip}/get_policies_to_compare",
+    #     params={
+    #         "eval_location": institution,
+    #         "evaluator_name": evaluator_email, # email is the primary form of id now
+    #         "robot_name": "DROID",
+    #     },
+    # )
+    # if not resp.ok:
+    #     print("Failed to obtain policies from central server:")
+    #     print(resp.status_code, resp.text)
+    #     sys.exit(1)
 
-    session_info = resp.json()
-    session_id: str = session_info["session_id"]
-    policies: list[Dict[str, Any]] = session_info["policies"]
+    # session_info = resp.json()
+    # session_id: str = session_info["session_id"]
+    # policies: list[Dict[str, Any]] = session_info["policies"]
+
+    session_id = str(int(time.time()))
+    policies = [
+        {
+            "label": "A",
+            "ip": "85d37ca32103.ngrok-free.app",
+            "port": 443,
+        }
+    ]
 
     print(
         f"\n✅  Session started (id = {session_id}). "
@@ -315,7 +324,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
                 result = policy_client.infer(request_data)
                 inference_latencies.append(time.time() - infer_t0)
 
-                pred_action_chunk = np.asarray(result["actions"])
+                pred_action_chunk = np.asarray(result)
                 if pred_action_chunk.ndim == 1:
                     pred_action_chunk = pred_action_chunk[None, ...]
 
@@ -357,6 +366,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
             time.sleep(max(0.0, (1 / 15) - elapsed))
 
         flush_stdin_buffer()
+
+        print("Worked")
+        exit()
 
         # ---------------------------------------------------------------------#
         #  User feedback (success & preference)                                 #
