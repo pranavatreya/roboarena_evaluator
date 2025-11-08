@@ -150,20 +150,28 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     # ----------------------------------------------------------------------- #
     #  Request policy list                                                    #
     # ----------------------------------------------------------------------- #
-    resp = requests.get(
-        f"http://{setting.logging_server_ip}/get_policies_to_compare",
-        params={
-            "eval_location": institution,
-            "evaluator_name": evaluator_email, # email is the primary form of id now
-            "robot_name": "DROID",
-        },
-    )
-    if not resp.ok:
-        print("Failed to obtain policies from central server:")
-        print(resp.status_code, resp.text)
-        sys.exit(1)
+    # resp = requests.get(
+    #     f"http://{setting.logging_server_ip}/get_policies_to_compare",
+    #     params={
+    #         "eval_location": institution,
+    #         "evaluator_name": evaluator_email, # email is the primary form of id now
+    #         "robot_name": "DROID",
+    #     },
+    # )
+    # if not resp.ok:
+    #     print("Failed to obtain policies from central server:")
+    #     print(resp.status_code, resp.text)
+    #     sys.exit(1)
 
-    session_info = resp.json()
+    #session_info = resp.json()
+    session_info = {
+        "session_id": str(int(time.time())), # unique session id
+        "policies": [{
+            "label": "A",
+            "ip": "114.67.221.134", # TODO: replace this with the IP addr of the policy you want to safety check
+            "port": 9000, # TODO: replace this with the port of the policy you want to safety check
+        }],
+    }
     session_id: str = session_info["session_id"]
     policies: list[Dict[str, Any]] = session_info["policies"]
 
@@ -357,6 +365,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
             time.sleep(max(0.0, (1 / 15) - elapsed))
 
         flush_stdin_buffer()
+
+        print("Finished evaluating the policy being tested. Exiting...")
+        exit()
 
         # ---------------------------------------------------------------------#
         #  User feedback (success & preference)                                 #
