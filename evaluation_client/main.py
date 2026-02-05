@@ -89,7 +89,7 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
 def check_server_version(server_ip: str) -> None:
     """Abort if the central server and client are out-of-sync."""
     url = f"http://{server_ip}/version_check"
-    payload = {"client_version": "1.2"}
+    payload = {"client_version": "1.3"}
     try:
         r = requests.post(url, json=payload)
         if not r.ok:
@@ -216,6 +216,9 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         both_exist = left_exists_on_robot and right_exists_on_robot
         if n_external == 2:
             assert both_exist, f"Policy {label} requested images from two third-person cameras, but your robot setup only has one. The script will now terminate because this policy cannot be evaluated. Please run this script again, and it's possible that the next time, the policies you will be given to evaluate only request one external camera. We understand this isn't the most optimal solution, and we'll work in the future to make this more seamless for you. Please contact us if this proves a significant inconvenience."
+            if input("This next policy you are about to evaluate needs 2 third-person (i.e., shoulder) cameras. Does your setup have 2 third-person cameras? (y/n): ").strip().lower() != "y":
+                print(f"Policy {label} requested images from two third-person cameras, but your robot setup only has one. The script will now terminate because this policy cannot be evaluated. Please run this script again, and it's possible that the next time, the policies you will be given to evaluate only request one external camera. We understand this isn't the most optimal solution, and we'll work in the future to make this more seamless for you. Please contact us if this proves a significant inconvenience.")
+                sys.exit(0)
 
         # 2. New RobotEnv instance as requested
         env = RobotEnv(action_space=action_space, gripper_action_space="position")
