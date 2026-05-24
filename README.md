@@ -74,15 +74,35 @@ Please make sure you're faimilar with its contents before running evals!
 
 ## Running Multiple Sessions in One Process
 
-DROID initialization is slow. To run several A/B sessions back-to-back
-without restarting the script, pass `-n` / `--num-runs`:
+DROID initialization is slow, and the camera-alignment preview at the
+start of each session takes a few seconds (it spins up a temporary env
+to grab a frame). To run several A/B sessions back-to-back without
+paying either of those costs per session, pass `-n` / `--num-runs`:
 
 ```bash
 python evaluation_client/main.py configs/my_institution.yaml --num-runs 10
 ```
 
-The robot/cameras stay initialized between sessions; you only re-answer
-the per-session prompts.
+The robot init **and** the camera-alignment check happen once at
+startup; sessions 2..N skip both and jump straight to the rollouts.
+
+If you also want to fix the language command across all N sessions
+(e.g. when batch-evaluating one task), pass `--prompt`:
+
+```bash
+python evaluation_client/main.py configs/my_institution.yaml \
+    --num-runs 10 --prompt "pick up the red block and place it in the box"
+```
+
+Without `--prompt` the script still asks for a command interactively
+at the start of each session, which is the right default when tasks
+should vary between sessions.
+
+A convenience wrapper, `run_roboarena.sh`, packages these flags:
+
+```bash
+./run_roboarena.sh configs/my_institution.yaml 10 "pick up the red block"
+```
 
 ---
 

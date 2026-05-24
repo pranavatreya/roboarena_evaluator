@@ -107,17 +107,12 @@ def check_server_version(server_ip: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-#  Main evaluation routine                                                    #
+#  One-time preflight (camera alignment + third-person vantage selection)     #
 # --------------------------------------------------------------------------- #
-def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) -> None:
-    """Main evaluation loop – runs through all policies returned by the server."""
-
-    # ----------------------------------------------------------------------- #
-    #  Handshake with central server                                          #
-    # ----------------------------------------------------------------------- #
-    check_server_version(setting.logging_server_ip)
-
-    # Temporary env just for camera alignment prompt
+def camera_preflight(setting: EvalConfig) -> Tuple[str, np.ndarray]:
+    """Spin up a throwaway env, confirm camera framing, and pick the third-person
+    vantage. Run once per process; cameras don't move between A/B sessions, so
+    re-confirming on every session is wasted work when looping with --num-runs."""
     env_preview = RobotEnv(action_space="joint_position", gripper_action_space="position")
     preview_obs = extract_observation(env_preview.get_observation(), setting)
 
@@ -150,6 +145,27 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     ):
         base_image = "right_image" if base_image == "left_image" else "left_image"
 
+    env_preview.close()
+    del env_preview
+    gc.collect()
+    time.sleep(0.2)
+
+    return base_image, preview_concat
+
+
+# --------------------------------------------------------------------------- #
+#  Main evaluation routine                                                    #
+# --------------------------------------------------------------------------- #
+def run_evaluation(
+    setting: EvalConfig,
+    evaluator_email: str,
+    institution: str,
+    base_image: str,
+    ref_reset_state: np.ndarray,
+    prompt: Optional[str] = None,
+) -> None:
+    """Main evaluation loop – runs through all policies returned by the server."""
+
     # ----------------------------------------------------------------------- #
     #  Request policy list                                                    #
     # ----------------------------------------------------------------------- #
@@ -175,14 +191,11 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         "We’ll evaluate policies A then B in sequence.\n"
     )
 
-    lang_command = input("Natural-language command to send to both policies: ")
-
-    # Save a reference state for “reset scene” prompt later
-    ref_reset_state = preview_concat.copy()
-    env_preview.close()
-    del env_preview
-    gc.collect()
-    time.sleep(0.2)
+    if prompt is not None:
+        lang_command = prompt
+        print(f"Language command (from --prompt): {lang_command}")
+    else:
+        lang_command = input("Natural-language command to send to both policies: ")
 
     preference_ab: Optional[str] = None
     comparative_feedback: Optional[str] = None
@@ -535,6 +548,12 @@ if __name__ == "__main__":
         default=1,
         help="Run N evaluation sessions back-to-back without re-initializing DROID. Default 1.",
     )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Language command to send to both policies. If omitted, the script asks interactively each session.",
+    )
     args = parser.parse_args()
 
     cfg: EvalConfig = load_config(args.config_path)
@@ -556,7 +575,20 @@ if __name__ == "__main__":
     if not default_inst:
         default_inst = input("Institution (e.g. Berkeley, UPenn): ").strip()
 
+    # One-time preflight: central-server handshake + camera-alignment check.
+    # Cameras don't move between A/B sessions, so we only do this once even
+    # when --num-runs > 1.
+    check_server_version(cfg.logging_server_ip)
+    base_image, ref_reset_state = camera_preflight(cfg)
+
     for i in range(args.num_runs):
         if args.num_runs > 1:
             print(f"\n=== Evaluation session {i + 1} / {args.num_runs} ===")
-        run_evaluation(cfg, default_email, default_inst)
+        run_evaluation(
+            cfg,
+            default_email,
+            default_inst,
+            base_image=base_image,
+            ref_reset_state=ref_reset_state,
+            prompt=args.prompt,
+        )
