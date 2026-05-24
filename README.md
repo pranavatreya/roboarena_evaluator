@@ -72,6 +72,54 @@ Please make sure you're faimilar with its contents before running evals!
 
 ---
 
+## Running Multiple Sessions in One Process
+
+DROID initialization is slow. To run several A/B sessions back-to-back
+without restarting the script, pass `-n` / `--num-runs`:
+
+```bash
+python evaluation_client/main.py configs/my_institution.yaml --num-runs 10
+```
+
+The robot/cameras stay initialized between sessions; you only re-answer
+the per-session prompts.
+
+---
+
+## Sanity-Checking a Single Policy
+
+Before submitting a new policy to the central matchmaker, you can drive
+it directly with `evaluation_client/test_single_policy.py`. This bypasses
+the central server entirely (no rating upload, no A/B), runs one rollout
+against a single policy URL of your choosing, and dumps the videos under
+`./single_policy_videos/`:
+
+```bash
+./run_single_policy.sh configs/my_institution.yaml <your-policy-host> 443
+```
+
+or invoke the script directly:
+
+```bash
+python evaluation_client/test_single_policy.py configs/my_institution.yaml \
+    --host <your-policy-host> --port 443
+```
+
+## Probing a Policy Server's Metadata
+
+If a policy server returns empty or inconsistent metadata,
+`evaluation_client/probe_policy_server.py` sends dummy observations to
+characterize what the server actually accepts (image resolution,
+n_external_cameras, needs_wrist_camera, etc.). It does **not** require
+a real robot:
+
+```bash
+python evaluation_client/probe_policy_server.py \
+    --host <your-policy-host> --port 443
+```
+
+---
+
 ## Importance of Long-Form Feedback
 
 After you finish evaluating policies A and B, the script prompts for **long-form textual feedback**. This is critical:
