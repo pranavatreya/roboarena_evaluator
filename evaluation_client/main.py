@@ -12,7 +12,10 @@ import numpy as np
 import requests
 from PIL import Image
 from tqdm import tqdm
-from moviepy.editor import ImageSequenceClip
+try:
+    from moviepy.editor import ImageSequenceClip
+except ImportError:
+    from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 import matplotlib.pyplot as plt
 
 try:
@@ -418,7 +421,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
                 return None
             tmp = f"/tmp/temp_{tag}.mp4"
             ImageSequenceClip(frames, fps=10).write_videofile(
-                tmp, codec="libx264", audio=False, verbose=False, logger=None
+                tmp, codec="libx264", audio=False, logger=None
             )
             with open(tmp, "rb") as f_:
                 data = f_.read()
@@ -516,11 +519,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         data={"session_id": session_id, "evaluation_notes": notes},
     )
 
-    print(
-        f"\n🎉  Evaluation session {session_id} complete – thank you!\n"
-        "(If the script hasn’t exited automatically, press Ctrl-C.)"
-    )
-    sys.exit(0)
+    print(f"\n🎉  Evaluation session {session_id} complete – thank you!\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -529,6 +528,13 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a RoboArena evaluation session.")
     parser.add_argument("config_path", type=str, help="Path to the YAML config")
+    parser.add_argument(
+        "-n",
+        "--num-runs",
+        type=int,
+        default=1,
+        help="Run N evaluation sessions back-to-back without re-initializing DROID. Default 1.",
+    )
     args = parser.parse_args()
 
     cfg: EvalConfig = load_config(args.config_path)
@@ -550,4 +556,7 @@ if __name__ == "__main__":
     if not default_inst:
         default_inst = input("Institution (e.g. Berkeley, UPenn): ").strip()
 
-    run_evaluation(cfg, default_email, default_inst)
+    for i in range(args.num_runs):
+        if args.num_runs > 1:
+            print(f"\n=== Evaluation session {i + 1} / {args.num_runs} ===")
+        run_evaluation(cfg, default_email, default_inst)
