@@ -29,6 +29,7 @@ Please make sure you're faimilar with its contents before running evals!
 1. Create or edit a YAML config file (similar to `configs/berkeley.yaml`) that contains:
    - `evaluator_email`: Your email. Email will be the primary form of identification for all evaluators and submitters. Make sure the same email is used for evaluations and for policy submissions, so you can get extra eval credit for evaluating policies. 
    - `institution`: Your university/institution
+   - `evaluator_code`: Your evaluator access code from the RoboArena team. Leave this blank the first time; the script will prompt for it and save it after successful validation.
    - `logging_server_ip`: Should be `34.55.101.123:5000`.
    - `third_person_camera`: The default vantage point (e.g. `right_image` or `left_image`).
    - A `cameras` section that identifies the camera `name` and `id` for your institution’s camera setup.
@@ -37,6 +38,7 @@ Please make sure you're faimilar with its contents before running evals!
    ```yaml
    evaluator_email: oski_bear@gmail.com
    institution: Berkeley
+   evaluator_code: ""
    logging_server_ip: 34.55.101.123:5000
    third_person_camera: right_image
    cameras:
@@ -57,9 +59,10 @@ Please make sure you're faimilar with its contents before running evals!
 
 4. **Follow the prompts** in the terminal:
    - Confirm defaults of evaluator email and institution.
+   - Enter your evaluator access code if it is not already saved in your YAML config.
    - Confirm that the left/right cameras are correctly pointing at the part of the scene you want for the third-person view.
    - (Optional) Switch between the left or right vantage if you prefer to do so; the script will ask you.
-   - Enter the language command you want the policy to follow (e.g., “pick up the red block and place it in the box”).
+   - Enter the language command you want the policy to follow (e.g., “pick up the red block and place it in the box”). The server only assigns the A/B pair after this command has been entered.
    - The system will then run the A/B evaluation
      1. **Policy A** rollout (it will then ask for partial success)
      2. **Policy B** rollout (it will ask for partial success, then it will ask which policy you preferred, A, B, or tie)
@@ -101,4 +104,3 @@ After you finish evaluating policies A and B, the script prompts for **long-form
 **Thank you** for your contributions to this benchmark!
 
 ---
-

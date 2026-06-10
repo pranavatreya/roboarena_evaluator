@@ -24,9 +24,11 @@ import faulthandler
 
 faulthandler.enable()
 
-from eval_config import EvalConfig, load_config
+from eval_config import EvalConfig, load_config, save_evaluator_code
 from websocket_client_policy import WebsocketClientPolicy
 import image_tools
+
+CLIENT_VERSION = "1.4"
 
 
 # --------------------------------------------------------------------------- #
@@ -89,7 +91,7 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
 def check_server_version(server_ip: str) -> None:
     """Abort if the central server and client are out-of-sync."""
     url = f"http://{server_ip}/version_check"
-    payload = {"client_version": "1.3"}
+    payload = {"client_version": CLIENT_VERSION}
     try:
         r = requests.post(url, json=payload)
         if not r.ok:
@@ -103,16 +105,53 @@ def check_server_version(server_ip: str) -> None:
         sys.exit(1)
 
 
+def validate_evaluator_access(
+    server_ip: str,
+    evaluator_email: str,
+    institution: str,
+    evaluator_code: str,
+) -> None:
+    """Abort if the evaluator access code is missing or rejected."""
+    url = f"http://{server_ip}/validate_evaluator_access"
+    payload = {
+        "evaluator_email": evaluator_email,
+        "institution": institution,
+        "evaluator_code": evaluator_code,
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=20)
+        if not r.ok:
+            print("Evaluator access code was rejected by the central server:")
+            print(r.status_code, r.text)
+            sys.exit(1)
+    except Exception as e:
+        print(f"Failed evaluator access-code check – server unreachable?\n{e}")
+        sys.exit(1)
+
+
 # --------------------------------------------------------------------------- #
 #  Main evaluation routine                                                    #
 # --------------------------------------------------------------------------- #
-def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) -> None:
+def run_evaluation(
+    setting: EvalConfig,
+    evaluator_email: str,
+    institution: str,
+    evaluator_code: str,
+    config_path: str,
+) -> None:
     """Main evaluation loop – runs through all policies returned by the server."""
 
     # ----------------------------------------------------------------------- #
     #  Handshake with central server                                          #
     # ----------------------------------------------------------------------- #
     check_server_version(setting.logging_server_ip)
+    validate_evaluator_access(
+        setting.logging_server_ip,
+        evaluator_email,
+        institution,
+        evaluator_code,
+    )
+    save_evaluator_code(config_path, evaluator_code)
 
     # Temporary env just for camera alignment prompt
     env_preview = RobotEnv(action_space="joint_position", gripper_action_space="position")
@@ -147,14 +186,21 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
     ):
         base_image = "right_image" if base_image == "left_image" else "left_image"
 
+    lang_command = input("Natural-language command to send to both policies: ").strip()
+    while not lang_command:
+        print("Please enter a non-empty natural-language command before policies are assigned.")
+        lang_command = input("Natural-language command to send to both policies: ").strip()
+
     # ----------------------------------------------------------------------- #
-    #  Request policy list                                                    #
+    #  Request policy list after the task has been fixed                      #
     # ----------------------------------------------------------------------- #
     resp = requests.get(
         f"http://{setting.logging_server_ip}/get_policies_to_compare",
         params={
             "eval_location": institution,
             "evaluator_name": evaluator_email, # email is the primary form of id now
+            "evaluator_code": evaluator_code,
+            "language_instruction": lang_command,
             "robot_name": "DROID",
         },
     )
@@ -171,8 +217,6 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
         f"\n✅  Session started (id = {session_id}). "
         "We’ll evaluate policies A then B in sequence.\n"
     )
-
-    lang_command = input("Natural-language command to send to both policies: ")
 
     # Save a reference state for “reset scene” prompt later
     ref_reset_state = preview_concat.copy()
@@ -447,6 +491,7 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 
         data = {
             "session_id": session_id,
+            "evaluator_code": evaluator_code,
             "command": lang_command,
             "binary_success": str(bin_succ),
             "partial_success": f"{partial_succ:.3f}",
@@ -513,7 +558,11 @@ def run_evaluation(setting: EvalConfig, evaluator_email: str, institution: str) 
 
     requests.post(
         f"http://{setting.logging_server_ip}/terminate_session",
-        data={"session_id": session_id, "evaluation_notes": notes},
+        data={
+            "session_id": session_id,
+            "evaluator_code": evaluator_code,
+            "evaluation_notes": notes,
+        },
     )
 
     print(
@@ -535,6 +584,7 @@ if __name__ == "__main__":
 
     default_email = cfg.evaluator_email
     default_inst = cfg.institution
+    default_code = cfg.evaluator_code
 
     if default_email and default_inst:
         print(
@@ -549,5 +599,10 @@ if __name__ == "__main__":
         default_email = input("Evaluator email: ").strip()
     if not default_inst:
         default_inst = input("Institution (e.g. Berkeley, UPenn): ").strip()
+    if not default_code:
+        default_code = input("Evaluator access code: ").strip()
+    while not default_code:
+        print("An evaluator access code is required. Ask the RoboArena team for one.")
+        default_code = input("Evaluator access code: ").strip()
 
-    run_evaluation(cfg, default_email, default_inst)
+    run_evaluation(cfg, default_email.strip().lower(), default_inst, default_code, args.config_path)
