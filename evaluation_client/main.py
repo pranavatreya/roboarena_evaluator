@@ -29,6 +29,7 @@ from websocket_client_policy import WebsocketClientPolicy
 import image_tools
 
 CLIENT_VERSION = "1.4"
+POLICY_PAIR_REQUEST_TIMEOUT_SECS = 120
 
 
 # --------------------------------------------------------------------------- #
@@ -194,16 +195,35 @@ def run_evaluation(
     # ----------------------------------------------------------------------- #
     #  Request policy list after the task has been fixed                      #
     # ----------------------------------------------------------------------- #
-    resp = requests.get(
-        f"http://{setting.logging_server_ip}/get_policies_to_compare",
-        params={
-            "eval_location": institution,
-            "evaluator_name": evaluator_email, # email is the primary form of id now
-            "evaluator_code": evaluator_code,
-            "language_instruction": lang_command,
-            "robot_name": "DROID",
-        },
+    print(
+        "\nRequesting an A/B policy pair from the central server. "
+        "This can take a little while if policy availability is being checked; "
+        "please wait...",
+        flush=True,
     )
+    try:
+        resp = requests.get(
+            f"http://{setting.logging_server_ip}/get_policies_to_compare",
+            params={
+                "eval_location": institution,
+                "evaluator_name": evaluator_email, # email is the primary form of id now
+                "evaluator_code": evaluator_code,
+                "language_instruction": lang_command,
+                "robot_name": "DROID",
+            },
+            timeout=POLICY_PAIR_REQUEST_TIMEOUT_SECS,
+        )
+    except requests.exceptions.Timeout:
+        print(
+            "Timed out while waiting for the central server to assign policies. "
+            "Please try again in a few minutes."
+        )
+        sys.exit(1)
+    except requests.RequestException as e:
+        print("Failed to contact the central server while assigning policies:")
+        print(e)
+        sys.exit(1)
+
     if not resp.ok:
         print("Failed to obtain policies from central server:")
         print(resp.status_code, resp.text)
