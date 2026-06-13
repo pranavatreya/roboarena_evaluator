@@ -28,7 +28,7 @@ from eval_config import EvalConfig, load_config, save_evaluator_code
 from websocket_client_policy import WebsocketClientPolicy
 import image_tools
 
-CLIENT_VERSION = "1.4"
+CLIENT_VERSION = "1.5"
 POLICY_PAIR_REQUEST_TIMEOUT_SECS = 120
 
 
