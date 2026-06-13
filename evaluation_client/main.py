@@ -202,9 +202,9 @@ def run_evaluation(
         flush=True,
     )
     try:
-        resp = requests.get(
+        resp = requests.post(
             f"http://{setting.logging_server_ip}/get_policies_to_compare",
-            params={
+            json={
                 "eval_location": institution,
                 "evaluator_name": evaluator_email, # email is the primary form of id now
                 "evaluator_code": evaluator_code,
