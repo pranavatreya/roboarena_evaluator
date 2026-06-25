@@ -12,7 +12,10 @@ import numpy as np
 import requests
 from PIL import Image
 from tqdm import tqdm
-from moviepy.editor import ImageSequenceClip
+try:
+    from moviepy.editor import ImageSequenceClip
+except ImportError:
+    from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 import matplotlib.pyplot as plt
 
 try:
@@ -131,30 +134,12 @@ def validate_evaluator_access(
 
 
 # --------------------------------------------------------------------------- #
-#  Main evaluation routine                                                    #
+#  One-time preflight (camera alignment + third-person vantage selection)     #
 # --------------------------------------------------------------------------- #
-def run_evaluation(
-    setting: EvalConfig,
-    evaluator_email: str,
-    institution: str,
-    evaluator_code: str,
-    config_path: str,
-) -> None:
-    """Main evaluation loop – runs through all policies returned by the server."""
-
-    # ----------------------------------------------------------------------- #
-    #  Handshake with central server                                          #
-    # ----------------------------------------------------------------------- #
-    check_server_version(setting.logging_server_ip)
-    validate_evaluator_access(
-        setting.logging_server_ip,
-        evaluator_email,
-        institution,
-        evaluator_code,
-    )
-    save_evaluator_code(config_path, evaluator_code)
-
-    # Temporary env just for camera alignment prompt
+def camera_preflight(setting: EvalConfig) -> Tuple[str, np.ndarray]:
+    """Spin up a throwaway env, confirm camera framing, and pick the third-person
+    vantage. Run once per process; cameras don't move between A/B sessions, so
+    re-confirming on every session is wasted work when looping with --num-runs."""
     env_preview = RobotEnv(action_space="joint_position", gripper_action_space="position")
     preview_obs = extract_observation(env_preview.get_observation(), setting)
 
@@ -187,10 +172,38 @@ def run_evaluation(
     ):
         base_image = "right_image" if base_image == "left_image" else "left_image"
 
-    lang_command = input("Natural-language command to send to both policies: ").strip()
-    while not lang_command:
-        print("Please enter a non-empty natural-language command before policies are assigned.")
+    env_preview.close()
+    del env_preview
+    gc.collect()
+    time.sleep(0.2)
+
+    return base_image, preview_concat
+
+
+# --------------------------------------------------------------------------- #
+#  Main evaluation routine                                                    #
+# --------------------------------------------------------------------------- #
+def run_evaluation(
+    setting: EvalConfig,
+    evaluator_email: str,
+    institution: str,
+    evaluator_code: str,
+    base_image: str,
+    ref_reset_state: np.ndarray,
+    prompt: Optional[str] = None,
+) -> None:
+    """Main evaluation loop – runs through all policies returned by the server."""
+
+    # The central server now needs the language command in the policy-assignment
+    # request, so decide it up-front (before requesting the A/B pair).
+    if prompt is not None:
+        lang_command = prompt
+        print(f"Language command (from --prompt): {lang_command}")
+    else:
         lang_command = input("Natural-language command to send to both policies: ").strip()
+        while not lang_command:
+            print("Please enter a non-empty natural-language command before policies are assigned.")
+            lang_command = input("Natural-language command to send to both policies: ").strip()
 
     # ----------------------------------------------------------------------- #
     #  Request policy list after the task has been fixed                      #
@@ -237,13 +250,6 @@ def run_evaluation(
         f"\n✅  Session started (id = {session_id}). "
         "We’ll evaluate policies A then B in sequence.\n"
     )
-
-    # Save a reference state for “reset scene” prompt later
-    ref_reset_state = preview_concat.copy()
-    env_preview.close()
-    del env_preview
-    gc.collect()
-    time.sleep(0.2)
 
     preference_ab: Optional[str] = None
     comparative_feedback: Optional[str] = None
@@ -482,7 +488,7 @@ def run_evaluation(
                 return None
             tmp = f"/tmp/temp_{tag}.mp4"
             ImageSequenceClip(frames, fps=10).write_videofile(
-                tmp, codec="libx264", audio=False, verbose=False, logger=None
+                tmp, codec="libx264", audio=False, logger=None
             )
             with open(tmp, "rb") as f_:
                 data = f_.read()
@@ -585,11 +591,7 @@ def run_evaluation(
         },
     )
 
-    print(
-        f"\n🎉  Evaluation session {session_id} complete – thank you!\n"
-        "(If the script hasn’t exited automatically, press Ctrl-C.)"
-    )
-    sys.exit(0)
+    print(f"\n🎉  Evaluation session {session_id} complete – thank you!\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -598,6 +600,19 @@ def run_evaluation(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a RoboArena evaluation session.")
     parser.add_argument("config_path", type=str, help="Path to the YAML config")
+    parser.add_argument(
+        "-n",
+        "--num-runs",
+        type=int,
+        default=1,
+        help="Run N evaluation sessions back-to-back without re-initializing DROID. Default 1.",
+    )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Language command to send to both policies. If omitted, the script asks interactively each session.",
+    )
     args = parser.parse_args()
 
     cfg: EvalConfig = load_config(args.config_path)
@@ -625,4 +640,24 @@ if __name__ == "__main__":
         print("An evaluator access code is required. Ask the RoboArena team for one.")
         default_code = input("Evaluator access code: ").strip()
 
-    run_evaluation(cfg, default_email.strip().lower(), default_inst, default_code, args.config_path)
+    # One-time preflight: central-server handshake, evaluator-access validation,
+    # and camera-alignment check. Cameras don't move between A/B sessions and the
+    # access code doesn't change, so we only do this once even when --num-runs > 1.
+    evaluator_email = default_email.strip().lower()
+    check_server_version(cfg.logging_server_ip)
+    validate_evaluator_access(cfg.logging_server_ip, evaluator_email, default_inst, default_code)
+    save_evaluator_code(args.config_path, default_code)
+    base_image, ref_reset_state = camera_preflight(cfg)
+
+    for i in range(args.num_runs):
+        if args.num_runs > 1:
+            print(f"\n=== Evaluation session {i + 1} / {args.num_runs} ===")
+        run_evaluation(
+            cfg,
+            evaluator_email,
+            default_inst,
+            default_code,
+            base_image=base_image,
+            ref_reset_state=ref_reset_state,
+            prompt=args.prompt,
+        )
