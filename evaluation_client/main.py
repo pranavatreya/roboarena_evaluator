@@ -27,9 +27,12 @@ import faulthandler
 
 faulthandler.enable()
 
-from eval_config import EvalConfig, load_config
+from eval_config import EvalConfig, load_config, save_evaluator_code
 from websocket_client_policy import WebsocketClientPolicy
 import image_tools
+
+CLIENT_VERSION = "1.5"
+POLICY_PAIR_REQUEST_TIMEOUT_SECS = 120
 
 
 # --------------------------------------------------------------------------- #
@@ -92,7 +95,7 @@ def extract_observation(obs_dict: Dict[str, Any], setting: EvalConfig) -> Dict[s
 def check_server_version(server_ip: str) -> None:
     """Abort if the central server and client are out-of-sync."""
     url = f"http://{server_ip}/version_check"
-    payload = {"client_version": "1.3"}
+    payload = {"client_version": CLIENT_VERSION}
     try:
         r = requests.post(url, json=payload)
         if not r.ok:
@@ -103,6 +106,30 @@ def check_server_version(server_ip: str) -> None:
             sys.exit(1)
     except Exception as e:
         print(f"Failed version check – server unreachable?\n{e}")
+        sys.exit(1)
+
+
+def validate_evaluator_access(
+    server_ip: str,
+    evaluator_email: str,
+    institution: str,
+    evaluator_code: str,
+) -> None:
+    """Abort if the evaluator access code is missing or rejected."""
+    url = f"http://{server_ip}/validate_evaluator_access"
+    payload = {
+        "evaluator_email": evaluator_email,
+        "institution": institution,
+        "evaluator_code": evaluator_code,
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=20)
+        if not r.ok:
+            print("Evaluator access code was rejected by the central server:")
+            print(r.status_code, r.text)
+            sys.exit(1)
+    except Exception as e:
+        print(f"Failed evaluator access-code check – server unreachable?\n{e}")
         sys.exit(1)
 
 
@@ -160,23 +187,56 @@ def run_evaluation(
     setting: EvalConfig,
     evaluator_email: str,
     institution: str,
+    evaluator_code: str,
     base_image: str,
     ref_reset_state: np.ndarray,
     prompt: Optional[str] = None,
 ) -> None:
     """Main evaluation loop – runs through all policies returned by the server."""
 
+    # The central server now needs the language command in the policy-assignment
+    # request, so decide it up-front (before requesting the A/B pair).
+    if prompt is not None:
+        lang_command = prompt
+        print(f"Language command (from --prompt): {lang_command}")
+    else:
+        lang_command = input("Natural-language command to send to both policies: ").strip()
+        while not lang_command:
+            print("Please enter a non-empty natural-language command before policies are assigned.")
+            lang_command = input("Natural-language command to send to both policies: ").strip()
+
     # ----------------------------------------------------------------------- #
-    #  Request policy list                                                    #
+    #  Request policy list after the task has been fixed                      #
     # ----------------------------------------------------------------------- #
-    resp = requests.get(
-        f"http://{setting.logging_server_ip}/get_policies_to_compare",
-        params={
-            "eval_location": institution,
-            "evaluator_name": evaluator_email, # email is the primary form of id now
-            "robot_name": "DROID",
-        },
+    print(
+        "\nRequesting an A/B policy pair from the central server. "
+        "This can take a little while if policy availability is being checked; "
+        "please wait...",
+        flush=True,
     )
+    try:
+        resp = requests.post(
+            f"http://{setting.logging_server_ip}/get_policies_to_compare",
+            json={
+                "eval_location": institution,
+                "evaluator_name": evaluator_email, # email is the primary form of id now
+                "evaluator_code": evaluator_code,
+                "language_instruction": lang_command,
+                "robot_name": "DROID",
+            },
+            timeout=POLICY_PAIR_REQUEST_TIMEOUT_SECS,
+        )
+    except requests.exceptions.Timeout:
+        print(
+            "Timed out while waiting for the central server to assign policies. "
+            "Please try again in a few minutes."
+        )
+        sys.exit(1)
+    except requests.RequestException as e:
+        print("Failed to contact the central server while assigning policies:")
+        print(e)
+        sys.exit(1)
+
     if not resp.ok:
         print("Failed to obtain policies from central server:")
         print(resp.status_code, resp.text)
@@ -190,12 +250,6 @@ def run_evaluation(
         f"\n✅  Session started (id = {session_id}). "
         "We’ll evaluate policies A then B in sequence.\n"
     )
-
-    if prompt is not None:
-        lang_command = prompt
-        print(f"Language command (from --prompt): {lang_command}")
-    else:
-        lang_command = input("Natural-language command to send to both policies: ")
 
     preference_ab: Optional[str] = None
     comparative_feedback: Optional[str] = None
@@ -463,6 +517,7 @@ def run_evaluation(
 
         data = {
             "session_id": session_id,
+            "evaluator_code": evaluator_code,
             "command": lang_command,
             "binary_success": str(bin_succ),
             "partial_success": f"{partial_succ:.3f}",
@@ -529,7 +584,11 @@ def run_evaluation(
 
     requests.post(
         f"http://{setting.logging_server_ip}/terminate_session",
-        data={"session_id": session_id, "evaluation_notes": notes},
+        data={
+            "session_id": session_id,
+            "evaluator_code": evaluator_code,
+            "evaluation_notes": notes,
+        },
     )
 
     print(f"\n🎉  Evaluation session {session_id} complete – thank you!\n")
@@ -560,6 +619,7 @@ if __name__ == "__main__":
 
     default_email = cfg.evaluator_email
     default_inst = cfg.institution
+    default_code = cfg.evaluator_code
 
     if default_email and default_inst:
         print(
@@ -574,11 +634,19 @@ if __name__ == "__main__":
         default_email = input("Evaluator email: ").strip()
     if not default_inst:
         default_inst = input("Institution (e.g. Berkeley, UPenn): ").strip()
+    if not default_code:
+        default_code = input("Evaluator access code: ").strip()
+    while not default_code:
+        print("An evaluator access code is required. Ask the RoboArena team for one.")
+        default_code = input("Evaluator access code: ").strip()
 
-    # One-time preflight: central-server handshake + camera-alignment check.
-    # Cameras don't move between A/B sessions, so we only do this once even
-    # when --num-runs > 1.
+    # One-time preflight: central-server handshake, evaluator-access validation,
+    # and camera-alignment check. Cameras don't move between A/B sessions and the
+    # access code doesn't change, so we only do this once even when --num-runs > 1.
+    evaluator_email = default_email.strip().lower()
     check_server_version(cfg.logging_server_ip)
+    validate_evaluator_access(cfg.logging_server_ip, evaluator_email, default_inst, default_code)
+    save_evaluator_code(args.config_path, default_code)
     base_image, ref_reset_state = camera_preflight(cfg)
 
     for i in range(args.num_runs):
@@ -586,8 +654,9 @@ if __name__ == "__main__":
             print(f"\n=== Evaluation session {i + 1} / {args.num_runs} ===")
         run_evaluation(
             cfg,
-            default_email,
+            evaluator_email,
             default_inst,
+            default_code,
             base_image=base_image,
             ref_reset_state=ref_reset_state,
             prompt=args.prompt,
