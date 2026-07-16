@@ -1,9 +1,7 @@
 # RoboArena Policy Inference Test
 
 This branch is for checking whether a single submitted RoboArena policy server
-implements the expected websocket inference API. It does not run a robot, does
-not contact the RoboArena central server, and does not create or count a
-benchmark evaluation.
+implements the expected websocket inference API.
 
 Use this before submitting a policy, or when reviewing a newly submitted policy,
 to confirm that the policy server:
@@ -139,7 +137,3 @@ If the server connects but inference fails:
   `observation/exterior_image_1_left`, `observation/wrist_image_left`,
   `observation/joint_position`, and `observation/gripper_position`;
 - confirm the policy returns a dictionary containing an `actions` array.
-
-This script is only an API and inference sanity check. Passing it does not prove
-that a policy is good, safe to run on a robot, or eligible for the public
-leaderboard.
