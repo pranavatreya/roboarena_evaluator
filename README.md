@@ -1,106 +1,145 @@
-# RoboArena
+# RoboArena Policy Inference Test
 
-Thanks for being a part of the evaluation team of RoboArena! This README explains how to run the evaluation client script, how to configure it for your institution’s setup, and some tips on picking tasks for evaluation and providing high-quality feedback used for evaluating policies.
+This branch is for checking whether a single submitted RoboArena policy server
+implements the expected websocket inference API. It does not run a robot, does
+not contact the RoboArena central server, and does not create or count a
+benchmark evaluation.
 
----
+Use this before submitting a policy, or when reviewing a newly submitted policy,
+to confirm that the policy server:
 
-## Evaluator Guide
+- accepts the same websocket protocol used by RoboArena evaluations;
+- sends valid policy metadata on connection;
+- accepts a dummy DROID-style observation payload;
+- runs inference on a natural-language prompt; and
+- returns a numeric action chunk with a RoboArena-compatible shape.
 
-We wrote an evaluator guide here: https://docs.google.com/document/d/1g-Z1lGUozbynA3U2khogBdLBZnrRTg9o2oqZUZkOwI4/edit?usp=sharing. 
+## Install
 
-Please make sure you're faimilar with its contents before running evals!
+Use Python 3.10+.
 
-## Installation
+```bash
+git clone <this-repo-url>
+cd roboarena_evaluator
+git checkout inference_test
+pip install -r requirements.txt
+```
 
-1. Clone this repo.
-2. Ensure you have **Python 3.7+** installed.
-3. Install dependencies.
+No DROID, R2D2, robot environment, evaluator code, camera config, or central
+server credential is required for this branch.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
-   
-4. Make sure **DROID** is installed on your system.
+## Start the Policy Server
 
----
+Start the submitted policy server exactly as it would be served for RoboArena.
+The server must be reachable from the machine running this checker.
 
-## Running the Evaluation
+The host may be a normal IP address, a DNS name, or a forwarding domain such as
+an ngrok hostname. Pasting a host with `ws://`, `wss://`, `http://`, or
+`https://` is okay; the checker strips the scheme and first tries
+`ws://HOST:PORT`, then falls back to `wss://HOST:PORT`.
 
-1. Create or edit a YAML config file (similar to `configs/berkeley.yaml`) that contains:
-   - `evaluator_email`: Your email. Email will be the primary form of identification for all evaluators and submitters. Make sure the same email is used for evaluations and for policy submissions, so you can get extra eval credit for evaluating policies. 
-   - `institution`: Your university/institution
-   - `evaluator_code`: Your evaluator access code from the RoboArena team. Leave this blank the first time; the script will prompt for it and save it after successful validation.
-   - `logging_server_ip`: Should be `34.55.101.123:5000`.
-   - `third_person_camera`: The default vantage point (e.g. `right_image` or `left_image`).
-   - A `cameras` section that identifies the camera `name` and `id` for your institution’s camera setup.
+## Run the Check
 
-   A minimal example, `my_institution.yaml`, might look like:
-   ```yaml
-   evaluator_email: oski_bear@gmail.com
-   institution: Berkeley
-   evaluator_code: ""
-   logging_server_ip: 34.55.101.123:5000
-   third_person_camera: right_image
-   cameras:
-     - name: left
-       id: 24259877
-     - name: right
-       id: 24514023
-     - name: wrist
-       id: 13062452
-   ```
-   Make sure to adjust the camera IDs to match your setup. See https://droid-dataset.github.io/droid/ for more details.
+```bash
+python evaluation_client/inference_test.py \
+  --host roboarena-server.ngrok.com \
+  --port 443 \
+  --prompt "pick up the red object"
+```
 
-3. **Run** the evaluation client script:
+For a local server:
 
-   ```bash
-   python evaluation_client/main.py configs/my_institution.yaml
-   ```
+```bash
+python evaluation_client/inference_test.py --host 127.0.0.1 --port 8000
+```
 
-4. **Follow the prompts** in the terminal:
-   - Confirm defaults of evaluator email and institution.
-   - Enter your evaluator access code if it is not already saved in your YAML config.
-   - Confirm that the left/right cameras are correctly pointing at the part of the scene you want for the third-person view.
-   - (Optional) Switch between the left or right vantage if you prefer to do so; the script will ask you.
-   - Enter the language command you want the policy to follow (e.g., “pick up the red block and place it in the box”). The server only assigns the A/B pair after this command has been entered.
-   - The system will then run the A/B evaluation
-     1. **Policy A** rollout (it will then ask for partial success)
-     2. **Policy B** rollout (it will ask for partial success, then it will ask which policy you preferred, A, B, or tie)
-   - **Important**: there are 3 types of feedback the script asks you to provide: partial success, A/B preference, and long-form feedback. For partial success please give your best approximate guess -- it's up to you how you assign partial credit points. The most important form of feedback is the next one, A/B preference. This is used to construct the global policy rankings. For long-form feedback, see additional instructions below.
-   - **At the end**, the script asks whether everything went well and if the session should be considered valid. Data from invalid sessions will not be used for our experiments, and we leave this option to handle cases where something went wrong mid-evaluation.
+Useful options:
 
-6. **Repeat** as many times as you want. **Between each run** of the entire script:
-   - Feel free to **move the robot** to a new location or **change tasks** for the next A/B evaluation. This fosters diverse evaluations. 
-   - You can also reposition or switch cameras to create new viewpoints.
+```bash
+python evaluation_client/inference_test.py --help
+```
 
----
+Common options:
 
-## Importance of Long-Form Feedback
+- `--host`: policy server host or domain.
+- `--port`: policy server port.
+- `--prompt`: instruction included in the dummy inference request.
+- `--num-calls`: number of inference calls to run on one websocket connection.
+- `--timeout`: websocket connection timeout in seconds.
+- `--session-id`: optional session ID sent only if the server metadata requests
+  `needs_session_id`.
 
-After you finish evaluating policies A and B, the script prompts for **long-form textual feedback**. This is critical:
+## What the Checker Sends
 
-1. **Reference Policy A or Policy B** by name. e.g.:
-   - “Policy A was a lot faster than policy B, but at the same time exhibited very abrupt movements. Both policies ended up succeeding at the task, but policy B did it more gracefully.”
+After connecting, the policy server sends metadata such as:
 
-2. Provide **granular details**:
-   - Did one policy complete the task faster/smoother?
-   - Could either policy handle highly out-of-distribution instructions or scenes?
+- `image_resolution`
+- `needs_wrist_camera`
+- `n_external_cameras`
+- `needs_stereo_camera`
+- `needs_session_id`
+- `action_space`
 
----
+The checker uses that metadata to build the same kind of payload the real
+RoboArena evaluator sends:
 
-## Behind the Scenes
+- `observation/joint_position`: `(7,)` float32
+- `observation/cartesian_position`: `(6,)` float32
+- `observation/gripper_position`: `(1,)` float32
+- `prompt`: string
+- requested exterior camera images as `uint8` arrays
+- requested wrist camera images as `uint8` arrays
+- `session_id`, only if requested by metadata
 
-- **All data** (videos, partial success ratings, your textual feedback, etc.) is **automatically logged** to the central server at `34.55.101.123:5000`. You do not need to upload anything manually.
-- Each evaluation session times out after a while if incomplete, but typically you’ll end the session yourself.
+Images are synthetic and deterministic. If the server declares an
+`image_resolution`, the checker resizes the synthetic images to that shape before
+sending them, matching the real evaluator behavior.
 
----
+## Passing Output
+
+A successful run prints the server metadata, a summary of the dummy request, and
+the returned action shape, for example:
+
+```text
+PASS: policy server accepted the RoboArena dummy request and returned actions.
+```
+
+The checker fails if:
+
+- it cannot connect to the websocket server;
+- the server does not return metadata;
+- inference raises an exception server-side;
+- the response does not contain `actions`;
+- actions are not numeric, finite, or rank 1/rank 2; or
+- the final action dimension is not 7 or 8.
+
+If a policy intentionally returns another action width, use:
+
+```bash
+python evaluation_client/inference_test.py \
+  --host HOST \
+  --port PORT \
+  --allow-unexpected-action-dim
+```
 
 ## Troubleshooting
 
-**Connection to central server succeeds, but to policy servers fail**: We've observed two instances where university firewalls block IP traffic to bore.pub, the IP forwarding service we are using to host our policy servers. This issue should be on the rarer side, but nevertheless it can be resolved by either (1) connecting to a hotspot instead of university wifi, or (2) setting up a VPN that allows you to bypass the university firewall.
+If connection fails:
 
----
+- confirm the policy server is running;
+- confirm the host and port are reachable from this machine;
+- check whether the server expects `ws://` or `wss://`;
+- if using a university network, try another network or VPN.
 
-**Thank you** for your contributions to this benchmark!
+If the server connects but inference fails:
 
----
+- read the traceback printed by the policy server;
+- confirm the policy metadata accurately describes which camera images it needs;
+- confirm the policy accepts DROID-style keys such as
+  `observation/exterior_image_1_left`, `observation/wrist_image_left`,
+  `observation/joint_position`, and `observation/gripper_position`;
+- confirm the policy returns a dictionary containing an `actions` array.
+
+This script is only an API and inference sanity check. Passing it does not prove
+that a policy is good, safe to run on a robot, or eligible for the public
+leaderboard.

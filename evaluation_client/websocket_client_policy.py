@@ -15,9 +15,15 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
     See WebsocketPolicyServer for a corresponding server implementation.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8000) -> None:
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8000,
+        timeout: float | None = None,
+    ) -> None:
         self._uri = f"ws://{host}:{port}"
         self._packer = msgpack_numpy.Packer()
+        self._timeout = timeout
         self._ws, self._server_metadata = self._wait_for_server()
 
     def get_server_metadata(self) -> Dict:
@@ -25,17 +31,23 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
 
     def _wait_for_server(self):
         logging.info(f"Waiting for server at {self._uri}...")
+        connect_kwargs = {"compression": None, "max_size": None}
+        if self._timeout is not None:
+            connect_kwargs["open_timeout"] = self._timeout
         try:
-            conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
-            metadata = msgpack_numpy.unpackb(conn.recv())
+            conn = websockets.sync.client.connect(self._uri, **connect_kwargs)
+            metadata = msgpack_numpy.unpackb(conn.recv(timeout=self._timeout))
             return conn, metadata
         except:
             logging.info("Connection to server with ws:// failed. Trying wss:// ...")
             
         self._uri = "wss://" + self._uri.split("//")[1]
-        conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
-        metadata = msgpack_numpy.unpackb(conn.recv())
+        conn = websockets.sync.client.connect(self._uri, **connect_kwargs)
+        metadata = msgpack_numpy.unpackb(conn.recv(timeout=self._timeout))
         return conn, metadata
+
+    def close(self) -> None:
+        self._ws.close()
 
     @override
     def infer(self, obs: Dict) -> Dict:  # noqa: UP006
@@ -44,7 +56,7 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
 
         data = self._packer.pack(obs)
         self._ws.send(data)
-        response = self._ws.recv()
+        response = self._ws.recv(timeout=self._timeout)
         if isinstance(response, str):
             # we're expecting bytes; if the server sends a string, it's an error.
             raise RuntimeError(f"Error in inference server:\n{response}")
@@ -57,6 +69,5 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
 
         data = self._packer.pack(reset_info)
         self._ws.send(data)
-        response = self._ws.recv()
+        response = self._ws.recv(timeout=self._timeout)
         return response
-
